@@ -49,7 +49,9 @@ export const getCollectionsV5Options: RouteOptions = {
         .description("Filter to a particular collection slug. Example: `boredapeyachtclub`"),
       collectionsSetId: Joi.string()
         .lowercase()
-        .description("Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"),
+        .description(
+          "Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"
+        ),
       community: Joi.string()
         .lowercase()
         .description("Filter to a particular community. Example: `artblocks`"),
@@ -380,7 +382,8 @@ export const getCollectionsV5Options: RouteOptions = {
                 END) AS month_sale_count,
             COUNT(*) AS total_sale_count
           FROM fill_events_2 fe
-          WHERE fe.contract = x.contract
+          JOIN "tokens" "t" ON "fe"."token_id" = "t"."token_id" AND "fe"."contract" = "t"."contract"
+          WHERE t.collection_id = x.id
           AND fe.is_deleted = 0
         ) s ON TRUE
       `;

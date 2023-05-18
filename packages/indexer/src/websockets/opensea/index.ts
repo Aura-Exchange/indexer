@@ -12,11 +12,12 @@ import * as Sdk from "@reservoir0x/sdk";
 import { WebSocket } from "ws";
 import { logger } from "@/common/logger";
 import { redis } from "@/common/redis";
-import { now } from "@/common/utils";
+import { now } from "lodash";
 import { config } from "@/config/index";
 import { OpenseaOrderParams } from "@/orderbook/orders/seaport-v1.1";
 import { generateHash, getSupportedChainName } from "@/websockets/opensea/utils";
 import * as orderbookOrders from "@/jobs/orderbook/orders-queue";
+import { GenericOrderInfo } from "@/jobs/orderbook/orders-queue";
 import * as orderbookOpenseaListings from "@/jobs/orderbook/opensea-listings-queue";
 import { handleEvent as handleItemListedEvent } from "@/websockets/opensea/handlers/item_listed";
 import { handleEvent as handleItemReceivedBidEvent } from "@/websockets/opensea/handlers/item_received_bid";
@@ -24,9 +25,15 @@ import { handleEvent as handleCollectionOfferEvent } from "@/websockets/opensea/
 import { handleEvent as handleTraitOfferEvent } from "@/websockets/opensea/handlers/trait_offer";
 import MetadataApi from "@/utils/metadata-api";
 import * as metadataIndexWrite from "@/jobs/metadata-index/write-queue";
+import { MqJobsDataManager } from "@/models/mq-jobs-data";
+import * as backfillBids from "@/jobs/backfill/backfill-bids";
 
 if (config.doWebsocketWork && config.openSeaApiKey) {
   const network = config.chainId === 5 ? Network.TESTNET : Network.MAINNET;
+  const maxCollectionBidsSize = config.chainId === 1 ? 50 : 1;
+  const maxBidsSize = config.chainId === 1 ? 200 : 1;
+  const bidsEvents: GenericOrderInfo[] = [];
+  const collectionBidsEvents: GenericOrderInfo[] = [];
 
   const client = new OpenSeaStreamClient({
     token: config.openSeaApiKey,
@@ -84,13 +91,32 @@ if (config.doWebsocketWork && config.openSeaApiKey) {
               },
               validateBidValue: true,
               ingestMethod: "websocket",
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any;
+            } as GenericOrderInfo;
 
             if (eventType === EventType.ITEM_LISTED) {
               await orderbookOpenseaListings.addToQueue([orderInfo]);
             } else {
-              await orderbookOrders.addToQueue([orderInfo]);
+              if (eventType === EventType.COLLECTION_OFFER) {
+                collectionBidsEvents.push(orderInfo);
+              } else {
+                bidsEvents.push(orderInfo);
+              }
+
+              if (collectionBidsEvents.length >= maxCollectionBidsSize) {
+                const orderInfoBatch = collectionBidsEvents.splice(0, collectionBidsEvents.length);
+                await orderbookOrders.addToQueue(orderInfoBatch);
+              }
+
+              if (bidsEvents.length >= maxBidsSize) {
+                const orderInfoBatch = bidsEvents.splice(0, bidsEvents.length);
+
+                const id = await MqJobsDataManager.addJobData(
+                  orderbookOrders.queue.name,
+                  orderInfoBatch
+                );
+
+                await backfillBids.addToQueue(id);
+              }
             }
           }
         }

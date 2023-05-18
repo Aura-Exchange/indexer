@@ -159,8 +159,14 @@ export const start = async (): Promise<void> => {
       return reply.continue;
     }
 
+    const remoteAddress = request.headers["x-forwarded-for"]
+      ? _.split(request.headers["x-forwarded-for"], ",")[0]
+      : request.info.remoteAddress;
+
+    const origin = request.headers["origin"];
+
     const key = request.headers["x-api-key"];
-    const apiKey = await ApiKeyManager.getApiKey(key);
+    const apiKey = await ApiKeyManager.getApiKey(key, remoteAddress, origin);
     const tier = apiKey?.tier || 0;
     let rateLimitRule;
 
@@ -195,13 +201,9 @@ export const start = async (): Promise<void> => {
     // If matching rule was found
     if (rateLimitRule) {
       // If the requested path has no limit
-      if (rateLimitRule.points == 0) {
+      if (rateLimitRule.rule.points == 0) {
         return reply.continue;
       }
-
-      const remoteAddress = request.headers["x-forwarded-for"]
-        ? _.split(request.headers["x-forwarded-for"], ",")[0]
-        : request.info.remoteAddress;
 
       const rateLimitKey =
         _.isUndefined(key) || _.isEmpty(key) || _.isNull(apiKey) ? remoteAddress : key; // If no api key or the api key is invalid use IP
@@ -211,16 +213,20 @@ export const start = async (): Promise<void> => {
           request.pre.metrics = {
             apiKey: key,
             route: request.route.path,
-            points: 1,
+            points: rateLimitRule.pointsToConsume,
             timestamp: _.now(),
           };
         }
 
-        const rateLimiterRes = await rateLimitRule.consume(rateLimitKey, 1);
+        const rateLimiterRes = await rateLimitRule.rule.consume(
+          rateLimitKey,
+          rateLimitRule.pointsToConsume
+        );
 
         if (rateLimiterRes) {
           // Generate the rate limiting header and add them to the request object to be added to the response in the onPreResponse event
-          request.headers["X-RateLimit-Limit"] = `${rateLimitRule.points}`;
+          request.headers["tier"] = tier;
+          request.headers["X-RateLimit-Limit"] = `${rateLimitRule.rule.points}`;
           request.headers["X-RateLimit-Remaining"] = `${rateLimiterRes.remainingPoints}`;
           request.headers["X-RateLimit-Reset"] = `${new Date(
             Date.now() + rateLimiterRes.msBeforeNext
@@ -230,13 +236,13 @@ export const start = async (): Promise<void> => {
         if (error instanceof RateLimiterRes) {
           if (
             error.consumedPoints &&
-            (error.consumedPoints == Number(rateLimitRule.points) + 1 ||
+            (error.consumedPoints == Number(rateLimitRule.rule.points) + 1 ||
               error.consumedPoints % 50 == 0)
           ) {
             const log = {
               message: `${rateLimitKey} ${apiKey?.appName || ""} reached allowed rate limit ${
-                rateLimitRule.points
-              } requests in ${rateLimitRule.duration}s by calling ${
+                rateLimitRule.rule.points
+              } credits in ${rateLimitRule.rule.duration}s by calling ${
                 error.consumedPoints
               } times on route ${request.route.path}${
                 request.info.referrer ? ` from referrer ${request.info.referrer} ` : ""
@@ -250,10 +256,18 @@ export const start = async (): Promise<void> => {
             logger.warn("rate-limiter", JSON.stringify(log));
           }
 
+          const message = `Max ${rateLimitRule.rule.points} credits in ${
+            rateLimitRule.rule.duration
+          }s reached, Detected tier ${tier}, Blocked by rule ID ${rateLimitRule.ruleParams.id}${
+            !_.isEmpty(rateLimitRule.ruleParams.payload)
+              ? ` Payload ${JSON.stringify(rateLimitRule.ruleParams.payload)}`
+              : ``
+          }. Please register for an API key by creating a free account at https://dashboard.reservoir.tools to increase your rate limit.`;
+
           const tooManyRequestsResponse = {
             statusCode: 429,
             error: "Too Many Requests",
-            message: `Max ${rateLimitRule.points} requests in ${rateLimitRule.duration}s reached. Please register for an API key by creating a free account at https://dashboard.reservoir.tools to increase your rate limit.`,
+            message,
           };
 
           return reply
@@ -311,6 +325,7 @@ export const start = async (): Promise<void> => {
     }
 
     if (!(response instanceof Boom)) {
+      typedResponse.header("tier", request.headers["tier"]);
       typedResponse.header("X-RateLimit-Limit", request.headers["X-RateLimit-Limit"]);
       typedResponse.header("X-RateLimit-Remaining", request.headers["X-RateLimit-Remaining"]);
       typedResponse.header("X-RateLimit-Reset", request.headers["X-RateLimit-Reset"]);

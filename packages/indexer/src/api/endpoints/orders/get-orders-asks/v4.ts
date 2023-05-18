@@ -16,10 +16,10 @@ import {
   toBuffer,
 } from "@/common/utils";
 import { CollectionSets } from "@/models/collection-sets";
-import { Sources } from "@/models/sources";
-import { Orders } from "@/utils/orders";
-import { TokenSets } from "@/models/token-sets";
 import { ContractSets } from "@/models/contract-sets";
+import { Sources } from "@/models/sources";
+import { TokenSets } from "@/models/token-sets";
+import { Orders } from "@/utils/orders";
 
 const version = "v4";
 
@@ -58,7 +58,9 @@ export const getOrdersAsksV4Options: RouteOptions = {
         .description("Filter to a particular community. Example: `artblocks`"),
       collectionsSetId: Joi.string()
         .lowercase()
-        .description("Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"),
+        .description(
+          "Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"
+        ),
       contractsSetId: Joi.string().lowercase().description("Filter to a particular contracts set."),
       contracts: Joi.alternatives()
         .try(
@@ -92,11 +94,13 @@ export const getOrdersAsksV4Options: RouteOptions = {
           otherwise: Joi.valid("active"),
         })
         .description(
-          "active*^º = currently valid\ninactive*^ = temporarily invalid\nexpired*^, canceled*^, filled*^ = permanently invalid\nany*º = any status\n* when an `id` is passed\n^ when a `maker` is passed\nº when a `contract` is passed"
+          "activeª^º = currently valid\ninactiveª^ = temporarily invalid\nexpiredª^, canceledª^, filledª^ = permanently invalid\nanyªº = any status\nª when an `id` is passed\n^ when a `maker` is passed\nº when a `contract` is passed"
         ),
       source: Joi.string()
         .pattern(regex.domain)
-        .description("Filter to a source by domain. Only active listed will be returned. Example: `opensea.io`"),
+        .description(
+          "Filter to a source by domain. Only active listed will be returned. Example: `opensea.io`"
+        ),
       native: Joi.boolean().description("If true, results will filter only Reservoir orders."),
       includePrivate: Joi.boolean()
         .default(false)
@@ -449,9 +453,15 @@ export const getOrdersAsksV4Options: RouteOptions = {
             conditions.push(`(orders.price, orders.id) > ($/priceOrCreatedAtOrUpdatedAt/, $/id/)`);
           }
         } else if (query.sortBy === "updatedAt") {
-          conditions.push(
-            `(orders.updated_at, orders.id) < (to_timestamp($/priceOrCreatedAtOrUpdatedAt/), $/id/)`
-          );
+          if (query.sortDirection === "asc") {
+            conditions.push(
+              `(orders.updated_at, orders.id) > (to_timestamp($/priceOrCreatedAtOrUpdatedAt/), $/id/)`
+            );
+          } else {
+            conditions.push(
+              `(orders.updated_at, orders.id) < (to_timestamp($/priceOrCreatedAtOrUpdatedAt/), $/id/)`
+            );
+          }
         } else {
           conditions.push(
             `(orders.created_at, orders.id) < (to_timestamp($/priceOrCreatedAtOrUpdatedAt/), $/id/)`
@@ -554,6 +564,7 @@ export const getOrdersAsksV4Options: RouteOptions = {
           missingRoyalties: r.missing_royalties,
           includeDynamicPricing: query.includeDynamicPricing,
           dynamic: r.dynamic,
+          displayCurrency: query.displayCurrency,
         });
       });
 

@@ -17,7 +17,8 @@ import { bn, formatPrice, fromBuffer, now, regex, toBuffer } from "@/common/util
 import { config } from "@/config/index";
 import { ApiKeyManager } from "@/models/api-keys";
 import { Sources } from "@/models/sources";
-import { generateBidDetailsV6, routerOnErrorCallback } from "@/orderbook/orders";
+import { generateBidDetailsV6 } from "@/orderbook/orders";
+import { fillErrorCallback, getExecuteError } from "@/orderbook/orders/errors";
 import * as commonHelpers from "@/orderbook/orders/common/helpers";
 import * as b from "@/utils/auth/blur";
 import { getCurrency } from "@/utils/currencies";
@@ -30,7 +31,7 @@ export const getExecuteSellV6Options: RouteOptions = {
   description: "Sell tokens (accept bids)",
   tags: ["api", "x-deprecated"],
   timeout: {
-    server: 20 * 1000,
+    server: 40 * 1000,
   },
   plugins: {
     "hapi-swagger": {
@@ -48,9 +49,8 @@ export const getExecuteSellV6Options: RouteOptions = {
             "looks-rare",
             "zeroex-v4",
             "seaport",
-            "seaport-partial",
             "seaport-v1.4",
-            "seaport-v1.4-partial",
+            "seaport-v1.5",
             "x2y2",
             "universe",
             "flow"
@@ -305,6 +305,12 @@ export const getExecuteSellV6Options: RouteOptions = {
       }
 
       const sources = await Sources.getInstance();
+
+      // Save the fill source if it doesn't exist yet
+      if (payload.source) {
+        await sources.getOrInsert(payload.source);
+      }
+
       const sourceId = orderResult.source_id_int;
       const source = sourceId ? sources.get(sourceId)?.domain ?? null : null;
 
@@ -344,7 +350,7 @@ export const getExecuteSellV6Options: RouteOptions = {
 
       // Partial Seaport orders require knowing the owner
       let owner: string | undefined;
-      if (["seaport-partial", "seaport-v1.4-partial"].includes(orderResult.kind)) {
+      if (["seaport-v1.4-partial", "seaport-v1.5-partial"].includes(orderResult.kind)) {
         const ownerResult = await idb.oneOrNone(
           `
             SELECT
@@ -377,7 +383,7 @@ export const getExecuteSellV6Options: RouteOptions = {
           isProtected:
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (orderResult.raw_data as any).zone ===
-            Sdk.SeaportV14.Addresses.OpenSeaProtectedOffersZone[config.chainId],
+            Sdk.SeaportBase.Addresses.OpenSeaProtectedOffersZone[config.chainId],
         },
         {
           kind: orderResult.token_kind,
@@ -389,9 +395,13 @@ export const getExecuteSellV6Options: RouteOptions = {
       );
 
       if (
-        ["x2y2", "seaport", "seaport-v1.4", "seaport-partial", "seaport-v1.4-partial"].includes(
-          bidDetails!.kind
-        )
+        [
+          "x2y2",
+          "seaport-v1.4",
+          "seaport-v1.5",
+          "seaport-v1.4-partial",
+          "seaport-v1.5-partial",
+        ].includes(bidDetails!.kind)
       ) {
         const tokenToSuspicious = await tryGetTokensSuspiciousStatus(
           tokenResult.last_flag_update < now() - 3600 ? [payload.token] : []
@@ -559,7 +569,7 @@ export const getExecuteSellV6Options: RouteOptions = {
 
       if (
         orderResult?.raw_data?.zone ===
-        Sdk.SeaportV14.Addresses.OpenSeaProtectedOffersZone[config.chainId]
+        Sdk.SeaportBase.Addresses.OpenSeaProtectedOffersZone[config.chainId]
       ) {
         // Ensure the taker owns the NFTs to get sold
         const takerIsOwner = await idb.oneOrNone(
@@ -605,15 +615,13 @@ export const getExecuteSellV6Options: RouteOptions = {
               orderId: data.orderId,
               message: error.response?.data ?? error.message,
             });
-            await routerOnErrorCallback(kind, error, data);
+            await fillErrorCallback(kind, error, data);
           },
           blurAuth,
         });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
-        const boomError = Boom.badRequest(error.message);
-        boomError.output.payload.errors = errors;
-        throw boomError;
+        throw getExecuteError(error.message, errors);
       }
 
       const { txs } = result;
@@ -783,7 +791,7 @@ export const getExecuteSellV6Options: RouteOptions = {
           `get-execute-sell-${version}-handler`,
           `Handler failure: ${error} (path = ${JSON.stringify(path)}, request = ${JSON.stringify(
             payload
-          )})`
+          )}, trace=${(error as any).stack})`
         );
       }
       throw error;

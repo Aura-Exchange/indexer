@@ -10,9 +10,14 @@ import * as Common from "../common";
 import { Exchange } from "./exchange";
 import { Builders } from "../seaport-base/builders";
 import { BaseBuilder, BaseOrderInfo } from "../seaport-base/builders/base";
-import { IOrder, ORDER_EIP712_TYPES, SeaportOrderKind } from "../seaport-base/order";
+import { IOrder, ORDER_EIP712_TYPES } from "../seaport-base/order";
 import * as Types from "../seaport-base/types";
 import { bn, getCurrentTimestamp, lc, n, s } from "../utils";
+import {
+  isPrivateOrder,
+  constructPrivateListingCounterOrder,
+  getPrivateListingFulfillments,
+} from "../seaport-base/helpers";
 
 export class Order implements IOrder {
   public chainId: number;
@@ -126,10 +131,6 @@ export class Order implements IOrder {
     return this.getBuilder().getInfo(this);
   }
 
-  public getKind(): SeaportOrderKind {
-    return SeaportOrderKind.SEAPORT_V11;
-  }
-
   public getMatchingPrice(timestampOverride?: number): BigNumberish {
     const info = this.getInfo();
     if (!info) {
@@ -240,6 +241,18 @@ export class Order implements IOrder {
         }
       }
     }
+  }
+
+  public getPrivateListingFulfillments(): Types.MatchOrdersFulfillment[] {
+    return getPrivateListingFulfillments(this.params);
+  }
+
+  public isPrivateOrder() {
+    return isPrivateOrder(this.params);
+  }
+
+  public constructPrivateListingCounterOrder(privateSaleRecipient: string): Types.OrderWithCounter {
+    return constructPrivateListingCounterOrder(privateSaleRecipient, this.params);
   }
 
   // Private methods

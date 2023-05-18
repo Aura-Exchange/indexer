@@ -48,7 +48,9 @@ export const getTokensV6Options: RouteOptions = {
         ),
       collectionsSetId: Joi.string()
         .lowercase()
-        .description("Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`")
+        .description(
+          "Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"
+        )
         .when("flagStatus", {
           is: Joi.exist(),
           then: Joi.forbidden(),
@@ -132,7 +134,9 @@ export const getTokensV6Options: RouteOptions = {
       sortBy: Joi.string()
         .valid("floorAskPrice", "tokenId", "rarity")
         .default("floorAskPrice")
-        .description("Order the items are returned in the response. Options are `floorAskPrice`, `tokenId`, and `rarity`."),
+        .description(
+          "Order the items are returned in the response. Options are `floorAskPrice`, `tokenId`, and `rarity`."
+        ),
       sortDirection: Joi.string().lowercase().valid("asc", "desc"),
       currencies: Joi.alternatives().try(
         Joi.array()
@@ -205,6 +209,8 @@ export const getTokensV6Options: RouteOptions = {
             isFlagged: Joi.boolean().default(false),
             lastFlagUpdate: Joi.string().allow("", null),
             lastFlagChange: Joi.string().allow("", null),
+            supply: Joi.number().unsafe().allow(null),
+            remainingSupply: Joi.number().unsafe().allow(null),
             rarity: Joi.number().unsafe().allow(null),
             rarityRank: Joi.number().unsafe().allow(null),
             collection: Joi.object({
@@ -435,7 +441,7 @@ export const getTokensV6Options: RouteOptions = {
         `;
     }
 
-    let sourceQuery = "";
+    let sourceCte = "";
     if (query.nativeSource) {
       const sources = await Sources.getInstance();
       let nativeSource = sources.getByName(query.nativeSource, false);
@@ -454,26 +460,19 @@ export const getTokensV6Options: RouteOptions = {
       selectFloorData = "s.*";
 
       const sourceConditions: string[] = [];
-      sourceConditions.push(`o.side = 'sell'`);
-      sourceConditions.push(`o.fillability_status = 'fillable'`);
-      sourceConditions.push(`o.approval_status = 'approved'`);
-      sourceConditions.push(`o.source_id_int = $/nativeSource/`);
+      sourceConditions.push(`side = 'sell'`);
+      sourceConditions.push(`fillability_status = 'fillable'`);
+      sourceConditions.push(`approval_status = 'approved'`);
+      sourceConditions.push(`source_id_int = $/nativeSource/`);
       sourceConditions.push(
-        `o.taker = '\\x0000000000000000000000000000000000000000' OR o.taker IS NULL`
+        `taker = '\\x0000000000000000000000000000000000000000' OR taker IS NULL`
       );
       if (query.currencies) {
-        sourceConditions.push(`o.currency IN ($/currenciesFilter:raw/)`);
+        sourceConditions.push(`currency IN ($/currenciesFilter:raw/)`);
       }
 
-      sourceConditions.push(`
-        tst.token_id IN (
-          SELECT token_id FROM orders
-          WHERE ${sourceConditions.join(" AND ")}
-        )
-      `);
-
       if (query.contract) {
-        sourceConditions.push(`tst.contract = $/contract/`);
+        sourceConditions.push(`contract = $/contract/`);
       } else if (query.collection) {
         let contractString = query.collection;
         if (query.collection.includes(":")) {
@@ -482,47 +481,46 @@ export const getTokensV6Options: RouteOptions = {
         }
 
         (query as any).contract = contractString;
-        sourceConditions.push(`tst.contract = $/contract/`);
+        sourceConditions.push(`contract = $/contract/`);
       }
 
-      sourceQuery = `
-        JOIN LATERAL (
+      sourceCte = `
+        WITH approved_orders AS (
+          SELECT *
+          FROM orders
+          WHERE ${sourceConditions.map((c) => `(${c})`).join(" AND ")}
+        ),
+        filtered_orders AS (
           SELECT
-                  DISTINCT ON (token_id, contract)
-                  tst.token_id AS token_id,
-                  tst.contract AS contract,
-                  o.id AS floor_sell_id,
-                  o.maker AS floor_sell_maker,
-                  o.id AS source_floor_sell_id,
-                  date_part('epoch', lower(o.valid_between)) AS floor_sell_valid_from,
-                  coalesce(
-                    nullif(date_part('epoch', upper(o.valid_between)), 'Infinity'),
-                    0
-                  ) AS floor_sell_valid_to,
-                  o.source_id_int AS floor_sell_source_id_int,
-                  ${
-                    query.normalizeRoyalties ? "o.normalized_value" : "o.value"
-                  } AS floor_sell_value,
-                  o.currency AS floor_sell_currency,
-                  ${
-                    query.normalizeRoyalties ? "o.currency_normalized_value" : "o.currency_value"
-                  } AS floor_sell_currency_value
-          FROM orders o
+            DISTINCT ON (token_id, contract)
+            tst.token_id AS token_id,
+            tst.contract AS contract,
+            o.id AS floor_sell_id,
+            o.maker AS floor_sell_maker,
+            o.id AS source_floor_sell_id,
+            date_part('epoch', lower(o.valid_between)) AS floor_sell_valid_from,
+            coalesce(
+              nullif(date_part('epoch', upper(o.valid_between)), 'Infinity'),
+              0
+            ) AS floor_sell_valid_to,
+            o.source_id_int AS floor_sell_source_id_int,
+            ${
+              query.normalizeRoyalties ? "o.normalized_value" : "o.value"
+            } AS floor_sell_value, o.currency AS floor_sell_currency,
+            ${
+              query.normalizeRoyalties ? "o.currency_normalized_value" : "o.currency_value"
+            } AS floor_sell_currency_value
+          FROM approved_orders o
           JOIN token_sets_tokens tst ON o.token_set_id = tst.token_set_id
-          ${
-            sourceConditions.length
-              ? " WHERE " + sourceConditions.map((c) => `(${c})`).join(" AND ")
-              : ""
-          }
           ORDER BY token_id, contract, ${
             query.normalizeRoyalties ? "o.normalized_value" : "o.value"
           }
-        ) s ON s.contract = t.contract AND s.token_id = t.token_id
-      `;
+        )`;
     }
 
     try {
       let baseQuery = `
+        ${sourceCte}
         SELECT
           t.contract,
           t.token_id,
@@ -539,6 +537,8 @@ export const getTokensV6Options: RouteOptions = {
           t.is_flagged,
           t.last_flag_update,
           t.last_flag_change,
+          t.supply,
+          t.remaining_supply,
           c.slug,
           (c.metadata ->> 'imageUrl')::TEXT AS collection_image,
           (
@@ -557,7 +557,11 @@ export const getTokensV6Options: RouteOptions = {
           ${selectRoyaltyBreakdown}
         FROM tokens t
         ${topBidQuery}
-        ${sourceQuery}
+        ${
+          sourceCte !== ""
+            ? "JOIN filtered_orders s ON s.contract = t.contract AND s.token_id = t.token_id"
+            : ""
+        }
         ${includeQuantityQuery}
         ${includeDynamicPricingQuery}
         ${includeRoyaltyBreakdownQuery}
@@ -1052,6 +1056,8 @@ export const getTokensV6Options: RouteOptions = {
             isFlagged: Boolean(Number(r.is_flagged)),
             lastFlagUpdate: r.last_flag_update ? new Date(r.last_flag_update).toISOString() : null,
             lastFlagChange: r.last_flag_change ? new Date(r.last_flag_change).toISOString() : null,
+            supply: !_.isNull(r.supply) ? r.supply : null,
+            remainingSupply: !_.isNull(r.remaining_supply) ? r.remaining_supply : null,
             rarity: r.rarity_score,
             rarityRank: r.rarity_rank,
             collection: {

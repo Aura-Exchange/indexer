@@ -58,7 +58,9 @@ export const getUserTopBidsV4Options: RouteOptions = {
         .description("Filter to a particular community. Example: `artblocks`"),
       collectionsSetId: Joi.string()
         .lowercase()
-        .description("Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"),
+        .description(
+          "Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"
+        ),
       optimizeCheckoutURL: Joi.boolean()
         .default(false)
         .description(
@@ -84,7 +86,9 @@ export const getUserTopBidsV4Options: RouteOptions = {
       sortBy: Joi.string()
         .valid("topBidValue", "dateCreated", "orderExpiry", "floorDifferencePercentage")
         .default("topBidValue")
-        .description("Order of the items are returned in the response. Options are `topBidValue`, `dateCreated`, `orderExpiry`, and `floorDifferencePercentage`."),
+        .description(
+          "Order of the items are returned in the response. Options are `topBidValue`, `dateCreated`, `orderExpiry`, and `floorDifferencePercentage`."
+        ),
       sortDirection: Joi.string().lowercase().valid("asc", "desc").default("desc"),
       limit: Joi.number()
         .integer()
@@ -106,30 +110,38 @@ export const getUserTopBidsV4Options: RouteOptions = {
   },
   response: {
     schema: Joi.object({
-      totalTokensWithBids: Joi.number(),
-      totalAmount: Joi.number(),
+      totalTokensWithBids: Joi.number().description("Amount of token with bids."),
+      totalAmount: Joi.number().description(
+        "Amount of currency from all token bids; native currency unless `displayCurrency` passed"
+      ),
       topBids: Joi.array().items(
         Joi.object({
           id: Joi.string(),
-          price: JoiPrice,
+          price: JoiPrice.description(
+            "Return native currency unless displayCurrency contract was passed."
+          ),
           maker: Joi.string()
             .lowercase()
             .pattern(/^0x[a-fA-F0-9]{40}$/),
-          createdAt: Joi.string(),
+          createdAt: Joi.string().description("Time when added to indexer"),
           validFrom: Joi.number().unsafe(),
           validUntil: Joi.number().unsafe(),
-          floorDifferencePercentage: Joi.number().unsafe(),
+          floorDifferencePercentage: Joi.number()
+            .unsafe()
+            .description("Percentage difference between this bid and the current floor price."),
           source: Joi.object().allow(null),
           feeBreakdown: Joi.array()
             .items(
               Joi.object({
-                kind: Joi.string(),
+                kind: Joi.string().description("Can be marketplace or royalty"),
                 recipient: Joi.string().allow("", null),
                 bps: Joi.number(),
               })
             )
             .allow(null),
-          criteria: JoiOrderCriteria.allow(null),
+          criteria: JoiOrderCriteria.allow(null).description(
+            "Kind can be token, collection, or attribute"
+          ),
           token: Joi.object({
             contract: Joi.string(),
             tokenId: Joi.string(),
@@ -141,7 +153,9 @@ export const getUserTopBidsV4Options: RouteOptions = {
               id: Joi.string().allow(null),
               name: Joi.string().allow("", null),
               imageUrl: Joi.string().allow(null),
-              floorAskPrice: JoiPrice.allow(null),
+              floorAskPrice: JoiPrice.allow(null).description(
+                "Native currency to chain unless displayCurrency is passed."
+              ),
             }),
           }),
         })

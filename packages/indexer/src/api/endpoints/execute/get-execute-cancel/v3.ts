@@ -19,7 +19,7 @@ const version = "v3";
 export const getExecuteCancelV3Options: RouteOptions = {
   description: "Cancel orders",
   notes: "Cancel existing orders on any marketplace",
-  tags: ["api", "Fill Orders (buy & sell)"],
+  tags: ["api", "Create Orders (list & bid)"],
   plugins: {
     "hapi-swagger": {
       order: 11,
@@ -32,6 +32,7 @@ export const getExecuteCancelV3Options: RouteOptions = {
       orderKind: Joi.string().valid(
         "seaport",
         "seaport-v1.4",
+        "seaport-v1.5",
         "looks-rare",
         "zeroex-v4-erc721",
         "zeroex-v4-erc1155",
@@ -103,6 +104,12 @@ export const getExecuteCancelV3Options: RouteOptions = {
           break;
         }
 
+        case "seaport-v1.5": {
+          const exchange = new Sdk.SeaportV15.Exchange(config.chainId);
+          cancelTx = exchange.cancelAllOrdersTx(payload.maker);
+          break;
+        }
+
         case "alienswap": {
           const exchange = new Sdk.Alienswap.Exchange(config.chainId);
           cancelTx = exchange.cancelAllOrdersTx(payload.maker);
@@ -149,6 +156,8 @@ export const getExecuteCancelV3Options: RouteOptions = {
           throw Boom.badRequest("Only Blur bids can be cancelled together");
         }
 
+        const maker = payload.orderIds[0].split(":")[1];
+
         // Set up generic filling steps
         const steps: {
           id: string;
@@ -178,15 +187,15 @@ export const getExecuteCancelV3Options: RouteOptions = {
         ];
 
         // Handle Blur authentication
-        const blurAuthId = b.getAuthId(payload.taker);
+        const blurAuthId = b.getAuthId(maker);
         const blurAuth = await b.getAuth(blurAuthId);
         if (!blurAuth) {
-          const blurAuthChallengeId = b.getAuthChallengeId(payload.taker);
+          const blurAuthChallengeId = b.getAuthChallengeId(maker);
 
           let blurAuthChallenge = await b.getAuthChallenge(blurAuthChallengeId);
           if (!blurAuthChallenge) {
             blurAuthChallenge = (await axios
-              .get(`${config.orderFetcherBaseUrl}/api/blur-auth-challenge?taker=${payload.taker}`)
+              .get(`${config.orderFetcherBaseUrl}/api/blur-auth-challenge?taker=${maker}`)
               .then((response) => response.data.authChallenge)) as b.AuthChallenge;
 
             await b.saveAuthChallenge(
@@ -247,7 +256,7 @@ export const getExecuteCancelV3Options: RouteOptions = {
           },
         });
 
-        return steps;
+        return { steps };
       }
 
       // Fetch the orders to get cancelled
@@ -298,7 +307,7 @@ export const getExecuteCancelV3Options: RouteOptions = {
       const orderResult = orderResults[0];
 
       // When bulk-cancelling, make sure all orders have the same kind
-      const supportedKinds = ["seaport", "seaport-v1.4", "alienswap"];
+      const supportedKinds = ["seaport", "seaport-v1.4", "seaport-v1.5", "alienswap"];
       if (isBulkCancel) {
         const supportsBulkCancel =
           supportedKinds.includes(orderResult.kind) &&
@@ -310,9 +319,12 @@ export const getExecuteCancelV3Options: RouteOptions = {
 
       // Handle off-chain cancellations
 
-      const cancellationZone = Sdk.SeaportV14.Addresses.CancellationZone[config.chainId];
+      const cancellationZone = Sdk.SeaportBase.Addresses.ReservoirCancellationZone[config.chainId];
       const areAllSeaportV14OracleCancellable = orderResults.every(
         (o) => o.kind === "seaport-v1.4" && o.raw_data.zone === cancellationZone
+      );
+      const areAllSeaportV15OracleCancellable = orderResults.every(
+        (o) => o.kind === "seaport-v1.5" && o.raw_data.zone === cancellationZone
       );
       const areAllAlienswapOracleCancellable = orderResults.every(
         (o) => o.kind === "alienswap" && o.raw_data.zone === cancellationZone
@@ -321,6 +333,8 @@ export const getExecuteCancelV3Options: RouteOptions = {
       let oracleCancellableKind: string | undefined;
       if (areAllSeaportV14OracleCancellable) {
         oracleCancellableKind = "seaport-v1.4";
+      } else if (areAllSeaportV15OracleCancellable) {
+        oracleCancellableKind = "seaport-v1.5";
       } else if (areAllAlienswapOracleCancellable) {
         oracleCancellableKind = "alienswap";
       }
@@ -388,6 +402,16 @@ export const getExecuteCancelV3Options: RouteOptions = {
             return new Sdk.SeaportV14.Order(config.chainId, dbOrder.raw_data);
           });
           const exchange = new Sdk.SeaportV14.Exchange(config.chainId);
+
+          cancelTx = exchange.cancelOrdersTx(maker, orders);
+          break;
+        }
+
+        case "seaport-v1.5": {
+          const orders = orderResults.map((dbOrder) => {
+            return new Sdk.SeaportV15.Order(config.chainId, dbOrder.raw_data);
+          });
+          const exchange = new Sdk.SeaportV15.Exchange(config.chainId);
 
           cancelTx = exchange.cancelOrdersTx(maker, orders);
           break;

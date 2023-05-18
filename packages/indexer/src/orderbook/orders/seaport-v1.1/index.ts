@@ -222,7 +222,7 @@ export const save = async (
       let approvalStatus = "approved";
       const exchange = new Sdk.SeaportV11.Exchange(config.chainId);
       try {
-        await offChainCheck(order, exchange, {
+        await offChainCheck(order, "seaport", exchange, {
           onChainApprovalRecheck: true,
           singleTokenERC721ApprovalCheck: metadata.fromOnChain,
         });
@@ -828,8 +828,12 @@ const getCollection = async (
       );
 
       logger.info(
-        "orders-seaport-save-partial",
-        `Unknown Collection. orderId=${orderParams.hash}, contract=${orderParams.contract}, collectionSlug=${orderParams.collectionSlug}, lockAcquired=${lockAcquired}`
+        "unknown-collection-slug",
+        JSON.stringify({
+          orderId: orderParams.hash,
+          contract: orderParams.contract,
+          collectionSlug: orderParams.collectionSlug,
+        })
       );
 
       if (lockAcquired) {

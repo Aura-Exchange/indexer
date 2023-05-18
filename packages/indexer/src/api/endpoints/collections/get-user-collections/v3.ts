@@ -10,6 +10,8 @@ import { CollectionSets } from "@/models/collection-sets";
 import { Assets } from "@/utils/assets";
 import { Sources } from "@/models/sources";
 import { getJoiPriceObject, JoiPrice } from "@/common/joi";
+import * as Sdk from "@reservoir0x/sdk";
+import { config } from "@/config/index";
 
 const version = "v3";
 
@@ -39,7 +41,9 @@ export const getUserCollectionsV3Options: RouteOptions = {
         .description("Filter to a particular community. Example: `artblocks`"),
       collectionsSetId: Joi.string()
         .lowercase()
-        .description("Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"),
+        .description(
+          "Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"
+        ),
       collection: Joi.string()
         .lowercase()
         .description(
@@ -371,7 +375,9 @@ export const getUserCollectionsV3Options: RouteOptions = {
                     nativeAmount: String(r.top_buy_value),
                   },
                 },
-                fromBuffer(r.top_buy_currency),
+                r.top_buy_currency
+                  ? fromBuffer(r.top_buy_currency)
+                  : Sdk.Common.Addresses.Eth[config.chainId],
                 query.displayCurrency
               )
             : undefined;

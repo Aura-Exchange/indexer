@@ -58,7 +58,9 @@ export const getUserTokensV7Options: RouteOptions = {
         .description("Filter to a particular community, e.g. `artblocks`"),
       collectionsSetId: Joi.string()
         .lowercase()
-        .description("Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"),
+        .description(
+          "Filter to a particular collection set. Example: `8daa732ebe5db23f267e58d52f1c9b1879279bcdf4f78b8fb563390e6946ea65`"
+        ),
       collection: Joi.string()
         .lowercase()
         .description(
@@ -90,7 +92,9 @@ export const getUserTokensV7Options: RouteOptions = {
       sortBy: Joi.string()
         .valid("acquiredAt", "lastAppraisalValue")
         .default("acquiredAt")
-        .description("Order the items are returned in the response. Options are `acquiredAt` and `lastAppraisalValue`."),
+        .description(
+          "Order the items are returned in the response. Options are `acquiredAt` and `lastAppraisalValue`."
+        ),
       sortDirection: Joi.string()
         .lowercase()
         .valid("asc", "desc")
@@ -138,6 +142,8 @@ export const getUserTokensV7Options: RouteOptions = {
             kind: Joi.string(),
             name: Joi.string().allow("", null),
             image: Joi.string().allow("", null),
+            supply: Joi.number().unsafe().allow(null),
+            remainingSupply: Joi.number().unsafe().allow(null),
             rarityScore: Joi.number().allow(null),
             rarityRank: Joi.number().allow(null),
             media: Joi.string().allow(null),
@@ -189,6 +195,7 @@ export const getUserTokensV7Options: RouteOptions = {
               validUntil: Joi.number().unsafe().allow(null),
               source: Joi.object().allow(null),
               rawData: Joi.object().optional().allow(null),
+              isNativeOffChainCancellable: Joi.boolean().optional(),
             },
             acquiredAt: Joi.string().allow(null),
           }),
@@ -370,6 +377,8 @@ export const getUserTokensV7Options: RouteOptions = {
           t.rarity_rank,
           t.collection_id,
           t.rarity_score,
+          t.supply,
+          t.remaining_supply,
           t.last_sell_value,
           t.last_buy_value,
           t.last_sell_timestamp,
@@ -404,6 +413,8 @@ export const getUserTokensV7Options: RouteOptions = {
             t.rarity_rank,
             t.collection_id,
             t.rarity_score,
+            t.supply,
+            t.remaining_supply,
             t.last_sell_value,
             t.last_buy_value,
             t.last_sell_timestamp,
@@ -482,7 +493,7 @@ export const getUserTokensV7Options: RouteOptions = {
       let baseQuery = `
         SELECT b.contract, b.token_id, b.token_count, extract(epoch from b.acquired_at) AS acquired_at, b.last_token_appraisal_value,
                t.name, t.image, t.media, t.rarity_rank, t.collection_id, t.floor_sell_id, t.floor_sell_value, t.floor_sell_currency, t.floor_sell_currency_value,
-               t.floor_sell_maker, t.floor_sell_valid_from, t.floor_sell_valid_to, t.floor_sell_source_id_int,
+               t.floor_sell_maker, t.floor_sell_valid_from, t.floor_sell_valid_to, t.floor_sell_source_id_int, t.supply, t.remaining_supply,
                t.rarity_score, ${selectLastSale}
                top_bid_id, top_bid_price, top_bid_value, top_bid_currency, top_bid_currency_price, top_bid_currency_value, top_bid_source_id_int,
                o.currency AS collection_floor_sell_currency, o.currency_price AS collection_floor_sell_currency_price,
@@ -625,6 +636,8 @@ export const getUserTokensV7Options: RouteOptions = {
             image: r.image,
             rarityScore: r.rarity_score,
             rarityRank: r.rarity_rank,
+            supply: !_.isNull(r.supply) ? r.supply : null,
+            remainingSupply: !_.isNull(r.remaining_supply) ? r.remaining_supply : null,
             media: r.media,
             collection: {
               id: r.collection_id,
@@ -748,6 +761,10 @@ export const getUserTokensV7Options: RouteOptions = {
                 url: floorSellSource?.metadata.url,
               },
               rawData: query.includeRawData ? r.floor_sell_raw_data : undefined,
+              isNativeOffChainCancellable: query.includeRawData
+                ? r.floor_sell_raw_data?.zone ===
+                  Sdk.SeaportBase.Addresses.ReservoirCancellationZone[config.chainId]
+                : undefined,
             },
             acquiredAt: acquiredTime,
           },
