@@ -216,6 +216,19 @@ export const getNetworkSettings = (): NetworkSettings => {
         },
         whitelistedCurrencies: new Map([
           [
+            "0xda9f05a3e133c2907e7173495022a936a3808d45", // MUST BE LOWERCASE
+            {
+              contract: "0xda9f05a3e133c2907e7173495022a936a3808d45",
+              name: "NelkCoin",
+              symbol: "NELK",
+              decimals: 18,
+              metadata: { // OPTIONAL
+                image:
+                  "https://ipfs.thirdwebcdn.com/ipfs/QmTVfXH5aogD3u5yCPDp4KAvbFeBGvwkxQKRVEQsftXkfo/favicon-32x32.png", 
+              },
+            },
+          ]
+          [
             "0xceb726e6383468dd8ac0b513c8330cc9fb4024a8",
             {
               contract: "0xceb726e6383468dd8ac0b513c8330cc9fb4024a8",
