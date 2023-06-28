@@ -285,6 +285,18 @@ export const getNetworkSettings = (): NetworkSettings => {
               },
             },
           ],
+          [
+            "0xbB4f3aD7a2cf75d8EfFc4f6D7BD21d95F06165ca",
+            {
+              contract: "0xbB4f3aD7a2cf75d8EfFc4f6D7BD21d95F06165ca",
+              name: "Sheesh",
+              symbol: "SHS",
+              decimals: 18,
+              metadata: {
+                image:"https://bafybeic2ukraukxbvs7mn5f5xqnqkr42r5exxjpij4fmw4otiows2zjzbi.ipfs-public.thirdwebcdn.com/Screenshot_2023-06-15_003656.png",
+              },
+            },
+          ],
         ]),
         coingecko: {
           networkId: "ethereum",
